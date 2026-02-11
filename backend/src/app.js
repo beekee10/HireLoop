@@ -1,26 +1,27 @@
-import dotenv from 'dotenv';
-if (process.env.NODE_ENV !== 'production') {
-  dotenv.config();
-}
-
 import express from "express";
 import { createServer } from "node:http";
 import { Server } from "socket.io";
-import mongoose from "mongoose";
 import cors from "cors";
 
 const app = express();
-const server = createServer(app);
+// const server = createServer(app);
 
-app.set("port", (process.env.PORT || 8080));
-app.use(cors());
+// basic configurations
+app.use(express.json({ limit: "16kb"}))
+app.use(express.urlencoded({ extended: true, limit: "16kb"}))
+app.use(express.static("public"))
 
-const start = async () => {
-  const connectionDb = await mongoose.connect(process.env.ATLASDB_URL)
-  console.log(`Mongo connected DB host: ${connectionDb.connection.host}`)
-  server.listen(app.get("port"), () => {
-    console.log("Listening to server");
-  });
-}
+// cors configuration
+app.use(cors({
+  origin: process.env.CORS_ORIGINS?.split(",") || "http://localhost:5137",
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization",]
+}))
 
-start();
+
+app.get('/', (req, res) => {
+  res.send('Hello World!')
+})
+
+export default app;
