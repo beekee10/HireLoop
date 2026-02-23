@@ -4,7 +4,9 @@ const companySchema = new Schema({
   name: {
     type: String,
     required: true,
-    unique: true
+    unique: true,
+    trim: true,
+    lowercase: true
   },
 
   roles: [String],
