@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Company from "../models/company.model.js";
 import Roadmap from "../models/roadmap.model.js";
+import redisClient from "../config/redis.js";
 
 const createCompany = async (req, res) => {
   const { name, roles, avgPackage, difficultyLevel } = req.body;
@@ -46,30 +47,85 @@ const createRoadmap = async (req, res) => {
       preparationTimeline
     });
 
+    // delete cache if exists
+    await redisClient.del(`roadmap:v1:${company._id}`);
+
     res.status(201).json({roadmap});
   } catch (err) {
     res.json({message: `Something went wrong ${err}`});
   }
 }
 
+const updateRoadmap = async (req, res) => {
+  try {
+    const roadmap = await Roadmap.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true }
+    );
+
+    if (!roadmap) {
+      return res.status(404).json({ message: "Roadmap not found" });
+    }
+
+    // invalidate cache
+    await redisClient.del(`roadmap:v1:${roadmap.companyId}`);
+
+    res.json(roadmap);
+
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const deleteRoadmap = async (req, res) => {
+  try {
+    const roadmap = await Roadmap.findByIdAndDelete(req.params.id);
+
+    if (!roadmap) {
+      return res.status(404).json({ message: "Roadmap not found" });
+    }
+
+    // remove cache
+    await redisClient.del(`roadmap:v1:${roadmap.companyId}`);
+
+    res.json({ message: "Roadmap deleted successfully" });
+
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 const getRoadmap = async (req, res) => {
   try {
     const { companyId } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(companyId)) {
-      return res.status(400).json({
-        message: "Invalid company ID"
-      });
+      return res.status(400).json({message: "Invalid company ID"});
     }
 
-    const roadmap = await Roadmap.findOne({ companyId });
+    const cacheKey = `roadmap:v1:${companyId}`;
+
+    // check redis
+    const cachedData = await redisClient.get(cacheKey);
+
+    if (cachedData) {
+      return res.status(200).json(JSON.parse(cachedData));
+    }
+
+    // fetch from MongoDB
+    const roadmap = await Roadmap.findOne({ companyId })
+      .populate("companyId")
+      .lean();
 
     if (!roadmap) {
-      return res.status(404).json({
-        message: "Roadmap not found"
-      });
+      return res.status(404).json({ message: "Roadmap not found" });
     }
 
+    // store in Redis (1 hour TTL)
+    await redisClient.set(cacheKey, JSON.stringify(roadmap), {EX: 3600});
+
+    // return response
     res.status(200).json(roadmap);
 
   } catch (err) {
@@ -77,4 +133,4 @@ const getRoadmap = async (req, res) => {
   }
 };
 
-export { createCompany, createRoadmap, getRoadmap };
+export { createCompany, createRoadmap, updateRoadmap, deleteRoadmap, getRoadmap };
